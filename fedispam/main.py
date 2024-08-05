@@ -1,36 +1,23 @@
-import logging
-
-from socketify import App
-
-
-logger = logging.getLogger("FediSpam")
-app = App()
-router = app.router()
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+import uvicorn
 
 
-@router.get("/")
-def hello_world(res, req):
-    """Simple hello world response"""
-    return res.end("Hello, World!")
+async def homepage(request):
+    return JSONResponse({"hello": "world"})
 
 
-@router.post("/echo")
-def echo(res, req):
-    """Echoes the request body back"""
-    data = req.body
-    return res.end(data)
+routes = [
+    Route("/", homepage),
+]
+
+
+app = Starlette(debug=True, routes=routes)
 
 
 def main():
-    logger.addHandler(logging.StreamHandler())
-    logger.setLevel(logging.DEBUG)
-    app.listen(
-        3000,
-        lambda config: logger.info(
-            "Listening on port http://localhost:%d now", config.port
-        ),
-    )
-    app.run()
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
 if __name__ == "__main__":

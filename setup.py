@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 setup(
     name="Fediverse Spam Filtering",
@@ -7,7 +7,7 @@ setup(
     author="Marc 'TOK_' Damie",
     author_email="marc@damie.eu",
     packages=["fedispam"],
-    install_requires=["socketify", "lmdb"],
+    install_requires=["starlette", "uvicorn", "aiodbm"],
     entry_points={
         "console_scripts": ["fedispam = fedispam.main:main"],
     },
