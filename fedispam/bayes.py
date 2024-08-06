@@ -2,6 +2,8 @@ import math
 import string
 from typing import Dict, Optional, List
 
+from fedispam.database import ModelDatabase
+
 
 STOPWORDS = [
     "i",
@@ -151,11 +153,13 @@ class NaiveBayes:
     word_counts: Optional[Dict[str, List[int]]] = None
     log_default_prob: Optional[List[float]] = None
 
-    def __init__(self, lang="english", outliar_threshold=3):
+    def __init__(self, lang="english", outliar_threshold=3, db_file="model.db"):
         self.outliar_threshold = (
             outliar_threshold  # Number of unknown words to classify as outliar
         )
         self.lang = lang
+        self.db = ModelDatabase(db_file)
+        # TODO: import model from DB
 
     def _update_log_prob(self):
         assert self.word_counts is not None
@@ -193,16 +197,29 @@ class NaiveBayes:
             self.log_posterior[word] = [posterior_0, posterior_1]
             # Remark: we apply a Laplace smoothing on the probabilities to cover unknown words.
 
+    def update_model_database(
+        self, updated_keys: Optional[List[str]] = None
+    ): ...  # TODO
+
+    def add_training_data(self, data): ...  # TODO
+
     def import_model(self, nb_samples, word_counts):
         self.nb_samples = nb_samples
         self.word_counts = word_counts
         self._update_log_prob()
+        self.update_model_database()
 
     def export_model(self):
         return self.nb_samples, self.word_counts
 
     def predict(self, message):
-        """ """
+        """Predict whether a message is a spam or not.
+
+        Possible outputs:
+        -> 1 = Spam
+        -> 0 = Ham
+        -> -1 = Outliar
+        """
         if self.log_posterior is None or self.log_prior is None:
             raise ValueError("Model must be trained first")
 
@@ -214,8 +231,6 @@ class NaiveBayes:
         outliar_count = 0
 
         for word, count in sp_vect.items():
-            # REMARK: to obtain the exact same results as Scikit Learn,
-            # We must include the following line (to ignore words unknown at training time)
             if word in self.log_posterior:
                 log_prob_0 += self.log_posterior[word][0] * count
                 log_prob_1 += self.log_posterior[word][1] * count

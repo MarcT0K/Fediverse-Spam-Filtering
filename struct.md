@@ -5,9 +5,9 @@
 - [POST] Outliar classification: Message, Decision -> None
 - [GET] Filtering confirmation: None -> List[JSON with word counts and message ID]
 - [POST] Filtering confirmation: Message ID, Decision -> None
-- [POST] Refresh: None -> None
 - [GET] Export model: None -> JSON
-- [Post] Import model: JSON -> None
+- [POST] Import model: JSON -> None
+- [POST] Import training data: JSON -> None
 
 # DB tables
 

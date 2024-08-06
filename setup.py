@@ -7,7 +7,7 @@ setup(
     author="Marc 'TOK_' Damie",
     author_email="marc@damie.eu",
     packages=["fedispam"],
-    install_requires=["starlette", "uvicorn", "aiodbm"],
+    install_requires=["starlette", "uvicorn"],
     entry_points={
         "console_scripts": ["fedispam = fedispam.main:main"],
     },
