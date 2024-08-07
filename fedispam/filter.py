@@ -162,10 +162,10 @@ class SpamFilter:
 
         self.lang = lang
         self.model_db = Database("model.db")
-        self.outliar_db = Database("outliars.db")
-        self.random_check_db = Database("preprocessed.db")
+        self.outliar_db = Database("outliers.db")
+        self.random_check_db = Database("random_check.db")
 
-        self.nb_samples: List[int] = []
+        self.nb_samples: List[int] = [0, 0]
         self.word_counts: Dict[str, List[int]] = {}
 
     def start(self):
@@ -175,19 +175,20 @@ class SpamFilter:
 
         model_information = self.model_db.extract_db()
 
-        # We use "#" as prefix for special model information
-        self.nb_samples.append(self.decode_int(model_information[b"#class0"]))
-        self.nb_samples.append(self.decode_int(model_information[b"#class1"]))
-        # We use "0/" as prefix for keywords in class 0 and "1/" for class 1
-        for key, value in model_information.items():
-            assert isinstance(key, bytes)
-            dec_key = key[2:].decode()
-            if dec_key.startswith("0/"):
-                if self.word_counts.get(dec_key) is None:
-                    self.word_counts[dec_key] = [self.decode_int(value), 0]
-            elif dec_key.startswith("1/"):
-                if self.word_counts.get(dec_key) is None:
-                    self.word_counts[dec_key] = [0, self.decode_int(value)]
+        if model_information:
+            # We use "#" as prefix for special model information
+            self.nb_samples.append(self.decode_int(model_information[b"#class0"]))
+            self.nb_samples.append(self.decode_int(model_information[b"#class1"]))
+            # We use "0/" as prefix for keywords in class 0 and "1/" for class 1
+            for key, value in model_information.items():
+                assert isinstance(key, bytes)
+                dec_key = key[2:].decode()
+                if dec_key.startswith("0/"):
+                    if self.word_counts.get(dec_key) is None:
+                        self.word_counts[dec_key] = [self.decode_int(value), 0]
+                elif dec_key.startswith("1/"):
+                    if self.word_counts.get(dec_key) is None:
+                        self.word_counts[dec_key] = [0, self.decode_int(value)]
 
         self._update_log_prob()
 
@@ -222,14 +223,17 @@ class SpamFilter:
 
         nb_nnz_features = len(self.word_counts.keys())
 
-        self.log_prior = [0.0, 0.0]
+        self.log_prior = [-math.inf, -math.inf]
 
-        self.log_prior[0] = math.log(self.nb_samples[0]) - math.log(
-            self.nb_samples[0] + self.nb_samples[1]
-        )
-        self.log_prior[1] = math.log(self.nb_samples[1]) - math.log(
-            self.nb_samples[0] + self.nb_samples[1]
-        )
+        if self.nb_samples[0] != 0:
+            self.log_prior[0] = math.log(self.nb_samples[0]) - math.log(
+                self.nb_samples[0] + self.nb_samples[1]
+            )
+
+        if self.nb_samples[1] != 0:
+            self.log_prior[1] = math.log(self.nb_samples[1]) - math.log(
+                self.nb_samples[0] + self.nb_samples[1]
+            )
 
         self.log_posterior = {}
         total_words = [0, 0]
@@ -238,8 +242,9 @@ class SpamFilter:
             total_words[1] += count_1
 
         self.log_default_prob = [0.0, 0.0]
-        self.log_default_prob[0] = -math.log(total_words[0] + nb_nnz_features)
-        self.log_default_prob[1] = -math.log(total_words[1] + nb_nnz_features)
+        if nb_nnz_features != 0:
+            self.log_default_prob[0] = -math.log(total_words[0] + nb_nnz_features)
+            self.log_default_prob[1] = -math.log(total_words[1] + nb_nnz_features)
 
         for word, (count_0, count_1) in self.word_counts.items():
             posterior_0 = math.log(1 + count_0) - math.log(
@@ -303,9 +308,9 @@ class SpamFilter:
 
         await self.update_model_database(list(updated_keys))
 
-    async def get_all_outliars(self) -> List[str]:
-        outliars = await self.outliar_db.get_all_keys()
-        return [outliar.decode() for outliar in outliars]
+    async def get_all_outliers(self) -> List[str]:
+        outliers = await self.outliar_db.get_all_keys()
+        return [outliar.decode() for outliar in outliers]
 
     async def random_check_manual_confirmation(
         self, data: List[Tuple[str, int]]

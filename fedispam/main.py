@@ -11,6 +11,10 @@ filtering_model = SpamFilter()
 
 
 async def filter_spam(request: Request):
+    """Predicts whether a message is a spam or not.
+
+    Request body: {"id": message_ID, "content": message_content}
+    """
     data = await request.json()
     if "id" not in data or "content" not in data:
         return JSONResponse({"error": "Invalid data format"}, status_code=400)
@@ -19,11 +23,16 @@ async def filter_spam(request: Request):
     return JSONResponse({"id": data["id"], "decision": decision})
 
 
-async def get_outliars(_request):
-    return JSONResponse(await filtering_model.get_all_outliars())
+async def get_outliers(_request):
+    """Returns the list of outliers identified spam filtering (waiting for a manual decision)."""
+    return JSONResponse(await filtering_model.get_all_outliers())
 
 
-async def classify_outliars(request):
+async def classify_outliers(request):
+    """Receives manual decisions for previously identified outliers.
+
+    Request body: [[outliar_ID_1, decision_1], ...]
+    """
     data = await request.json()
     try:
         await filtering_model.outliar_manual_confirmation(data)
@@ -36,10 +45,15 @@ async def classify_outliars(request):
 
 
 async def random_check_confirmation_get(_request):
+    """Returns a list of randomly selected messages requiring a manual check."""
     return JSONResponse(await filtering_model.get_all_random_checks())
 
 
 async def random_check_confirmation_post(request):
+    """Receives manual decisions for randomly selected messages.
+
+    Request body: [[message_ID_1, decision_1], ...]
+    """
     data = await request.json()
     try:
         await filtering_model.random_check_manual_confirmation(data)
@@ -52,6 +66,7 @@ async def random_check_confirmation_post(request):
 
 
 async def model_import(request):
+    """Import model parameters"""
     data = await request.json()
     if "model" not in data:
         return JSONResponse(
@@ -63,10 +78,15 @@ async def model_import(request):
 
 
 async def model_export(_request):
+    """Export model parameters"""
     return JSONResponse(filtering_model.export_model())
 
 
 async def training_data_import(request):
+    """Update the model based on imported data
+
+    Request body: [[message_content_1, message_type_1], ...]
+    """
     data = await request.json()
     try:
         await filtering_model.add_training_data(data)
@@ -80,8 +100,8 @@ async def training_data_import(request):
 
 routes = [
     Route("/filter", filter_spam, methods=["POST"]),
-    Route("/outliars", get_outliars, methods=["GET"]),
-    Route("/outliars/classify", classify_outliars, methods=["POST"]),
+    Route("/outliers", get_outliers, methods=["GET"]),
+    Route("/outliers/classify", classify_outliers, methods=["POST"]),
     Route("/random_check/", random_check_confirmation_get, methods=["GET"]),
     Route("/random_check/", random_check_confirmation_post, methods=["POST"]),
     Route("/model/import", model_import, methods=["GET"]),
