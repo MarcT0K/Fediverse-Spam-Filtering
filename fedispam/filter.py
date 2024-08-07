@@ -163,7 +163,7 @@ class SpamFilter:
         self.lang = lang
         self.model_db = Database("model.db")
         self.outliar_db = Database("outliars.db")
-        self.preprocessed_db = Database("preprocessed.db")
+        self.random_check_db = Database("preprocessed.db")
 
         self.nb_samples: List[int] = []
         self.word_counts: Dict[str, List[int]] = {}
@@ -171,7 +171,7 @@ class SpamFilter:
     def start(self):
         self.model_db.open()
         self.outliar_db.open()
-        self.preprocessed_db.open()
+        self.random_check_db.open()
 
         model_information = self.model_db.extract_db()
 
@@ -194,17 +194,29 @@ class SpamFilter:
     def stop(self):
         self.model_db.close()
         self.outliar_db.close()
-        self.preprocessed_db.close()
+        self.random_check_db.close()
 
     @staticmethod
-    def encode_int(nb):
+    def encode_int(nb: int) -> bytes:
         return nb.to_bytes(8, byteorder="big")
 
     @staticmethod
-    def decode_int(byte_string):
+    def decode_int(byte_string: bytes) -> int:
         return int.from_bytes(byte_string, byteorder="big")
 
-    def _update_log_prob(self):
+    def encode_preprocessed(
+        self, decision: int, message_word_count: Dict[str, int]
+    ) -> str:
+        enc_count = json.dumps(message_word_count)
+        return str(decision) + "||" + enc_count
+
+    def decode_preprocessed(self, enc_message: str) -> Tuple[int, Dict[str, int]]:
+        enc_decision, enc_count = enc_message.split("||", 1)
+        decision = int(enc_decision)
+        message_word_count = json.loads(enc_count)
+        return decision, message_word_count
+
+    def _update_log_prob(self) -> None:
         assert self.word_counts is not None
         assert self.nb_samples is not None
 
@@ -240,7 +252,9 @@ class SpamFilter:
             self.log_posterior[word] = [posterior_0, posterior_1]
             # Remark: we apply a Laplace smoothing on the probabilities to cover unknown words.
 
-    async def update_model_database(self, updated_keys: Optional[List[str]] = None):
+    async def update_model_database(
+        self, updated_keys: Optional[List[str]] = None
+    ) -> None:
         if updated_keys is None:  # Overwrite the whole database
             await self.model_db.del_all_keys()
             updated_keys = list(self.word_counts.keys())
@@ -257,13 +271,13 @@ class SpamFilter:
 
         await self.model_db.set_multiple_keys(db_dict)
 
-    def _add_word_count_to_model(self, message_word_count, type):
+    def _add_word_count_to_model(self, message_word_count, message_type):
         updated_keys = set()
         for word, count in message_word_count.items():
             curr_count = self.word_counts.get(word, [0, 0])
-            curr_count[type] += count
+            curr_count[message_type] += count
             self.word_counts[word] = curr_count
-            self.nb_samples[type] += 1
+            self.nb_samples[message_type] += 1
             updated_keys.add(word)
 
         return updated_keys
@@ -275,10 +289,10 @@ class SpamFilter:
             updated_keys = updated_keys.union(
                 self._add_word_count_to_model(message_word_count, decision)
             )
-        
+
         await self.update_model_database(list(updated_keys))
 
-    async def outliar_manual_confirmation(self, data: List[Tuple[str, int]]):
+    async def outliar_manual_confirmation(self, data: List[Tuple[str, int]]) -> None:
         updated_keys = set()
         for message_id, decision in data:
             enc = await self.outliar_db.get_and_del_key(message_id)
@@ -289,10 +303,16 @@ class SpamFilter:
 
         await self.update_model_database(list(updated_keys))
 
-    async def random_check_manual_confirmation(self, data: List[Tuple[str, int]]):
+    async def get_all_outliars(self) -> List[str]:
+        outliars = await self.outliar_db.get_all_keys()
+        return [outliar.decode() for outliar in outliars]
+
+    async def random_check_manual_confirmation(
+        self, data: List[Tuple[str, int]]
+    ) -> None:
         updated_keys = set()
         for message_id, decision in data:
-            enc = await self.preprocessed_db.get_and_del_key(message_id)
+            enc = await self.random_check_db.get_and_del_key(message_id)
             message_word_count = json.loads(enc)
             updated_keys = updated_keys.union(
                 self._add_word_count_to_model(message_word_count, decision)
@@ -300,16 +320,25 @@ class SpamFilter:
 
         await self.update_model_database(list(updated_keys))
 
-    async def import_model(self, nb_samples, word_counts):
-        self.nb_samples = nb_samples
-        self.word_counts = word_counts
+    async def get_all_random_checks(self) -> List[Tuple[str, int]]:
+        random_check_dict = await self.random_check_db.get_all_key_values()
+        res = []
+        for message_id, payload in random_check_dict.items():
+            decision, _ = self.decode_preprocessed(payload.decode())
+            res.append((message_id.decode(), decision))
+        return res
+
+    async def import_model(self, model) -> None:
+        self.nb_samples = model["nb_samples"]
+        self.word_counts = model["word_counts"]
         self._update_log_prob()
         await self.update_model_database()
 
     def export_model(self):
-        return self.nb_samples, self.word_counts
+        model = {"nb_samples": self.nb_samples, "word_counts": self.word_counts}
+        return model
 
-    async def predict(self, message):
+    async def predict(self, message) -> int:
         """Predict whether a message is a spam or not.
 
         Possible outputs:
@@ -343,7 +372,10 @@ class SpamFilter:
         else:
             r = random.random()
             if r < self.random_confirmation_rate:
-                await self.preprocessed_db.set_key(message["id"], json.dumps(sp_vect))
+
+                await self.random_check_db.set_key(
+                    message["id"], self.encode_preprocessed(pred, sp_vect)
+                )
 
         return pred
 

@@ -3,8 +3,8 @@
 - [POST] Filter: JSON with message information -> Spam score [0,1]
 - [GET] Unclassified Outliars: None -> List[JSON with word counts and message ID]
 - [POST] Outliar classification: Message, Decision -> None
-- [GET] Filtering confirmation: None -> List[JSON with word counts and message ID]
-- [POST] Filtering confirmation: Message ID, Decision -> None
+- [GET] Random check list: None -> List[JSON with word counts and message ID]
+- [POST] Random check confirmation: Message ID, Decision -> None
 - [GET] Export model: None -> JSON
 - [POST] Import model: JSON -> None
 - [POST] Import training data: JSON -> None
