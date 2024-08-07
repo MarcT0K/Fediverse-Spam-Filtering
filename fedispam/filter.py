@@ -1,7 +1,8 @@
+import json
 import math
 import random
 import string
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
 
 from fedispam.database import Database
 
@@ -148,9 +149,7 @@ class SpamFilter:
     """
 
     log_prior: Optional[List[float]] = None
-    nb_samples: Optional[List[int]] = None
     log_posterior: Optional[Dict[str, List[float]]] = None
-    word_counts: Optional[Dict[str, List[int]]] = None
     log_default_prob: Optional[List[float]] = None
 
     def __init__(
@@ -166,15 +165,44 @@ class SpamFilter:
         self.outliar_db = Database("outliars.db")
         self.preprocessed_db = Database("preprocessed.db")
 
+        self.nb_samples: List[int] = []
+        self.word_counts: Dict[str, List[int]] = {}
+
     def start(self):
         self.model_db.open()
         self.outliar_db.open()
         self.preprocessed_db.open()
 
+        model_information = self.model_db.extract_db()
+
+        # We use "#" as prefix for special model information
+        self.nb_samples.append(self.decode_int(model_information[b"#class0"]))
+        self.nb_samples.append(self.decode_int(model_information[b"#class1"]))
+        # We use "0/" as prefix for keywords in class 0 and "1/" for class 1
+        for key, value in model_information.items():
+            assert isinstance(key, bytes)
+            dec_key = key[2:].decode()
+            if dec_key.startswith("0/"):
+                if self.word_counts.get(dec_key) is None:
+                    self.word_counts[dec_key] = [self.decode_int(value), 0]
+            elif dec_key.startswith("1/"):
+                if self.word_counts.get(dec_key) is None:
+                    self.word_counts[dec_key] = [0, self.decode_int(value)]
+
+        self._update_log_prob()
+
     def stop(self):
         self.model_db.close()
         self.outliar_db.close()
         self.preprocessed_db.close()
+
+    @staticmethod
+    def encode_int(nb):
+        return nb.to_bytes(8, byteorder="big")
+
+    @staticmethod
+    def decode_int(byte_string):
+        return int.from_bytes(byte_string, byteorder="big")
 
     def _update_log_prob(self):
         assert self.word_counts is not None
@@ -212,22 +240,76 @@ class SpamFilter:
             self.log_posterior[word] = [posterior_0, posterior_1]
             # Remark: we apply a Laplace smoothing on the probabilities to cover unknown words.
 
-    def update_model_database(
-        self, updated_keys: Optional[List[str]] = None
-    ): ...  # TODO
+    async def update_model_database(self, updated_keys: Optional[List[str]] = None):
+        if updated_keys is None:  # Overwrite the whole database
+            await self.model_db.del_all_keys()
+            updated_keys = list(self.word_counts.keys())
 
-    def add_training_data(self, data): ...  # TODO
+        db_dict = {}
+        # We use "#" as prefix for special model information
+        db_dict["#class0"] = self.encode_int(self.nb_samples[0])
+        db_dict["#class1"] = self.encode_int(self.nb_samples[1])
 
-    def import_model(self, nb_samples, word_counts):
+        for key in updated_keys:
+            value_list = self.word_counts[key]
+            db_dict["0/" + key] = self.encode_int(value_list[0])
+            db_dict["1/" + key] = self.encode_int(value_list[0])
+
+        await self.model_db.set_multiple_keys(db_dict)
+
+    def _add_word_count_to_model(self, message_word_count, type):
+        updated_keys = set()
+        for word, count in message_word_count.items():
+            curr_count = self.word_counts.get(word, [0, 0])
+            curr_count[type] += count
+            self.word_counts[word] = curr_count
+            self.nb_samples[type] += 1
+            updated_keys.add(word)
+
+        return updated_keys
+
+    async def add_training_data(self, data: List[Tuple[str, int]]):
+        updated_keys = set()
+        for message_content, decision in data:
+            message_word_count = self._preprocess_text(message_content)
+            updated_keys = updated_keys.union(
+                self._add_word_count_to_model(message_word_count, decision)
+            )
+        
+        await self.update_model_database(list(updated_keys))
+
+    async def outliar_manual_confirmation(self, data: List[Tuple[str, int]]):
+        updated_keys = set()
+        for message_id, decision in data:
+            enc = await self.outliar_db.get_and_del_key(message_id)
+            message_word_count = json.loads(enc)
+            updated_keys = updated_keys.union(
+                self._add_word_count_to_model(message_word_count, decision)
+            )
+
+        await self.update_model_database(list(updated_keys))
+
+    async def random_check_manual_confirmation(self, data: List[Tuple[str, int]]):
+        updated_keys = set()
+        for message_id, decision in data:
+            enc = await self.preprocessed_db.get_and_del_key(message_id)
+            message_word_count = json.loads(enc)
+            updated_keys = updated_keys.union(
+                self._add_word_count_to_model(message_word_count, decision)
+            )
+
+        await self.update_model_database(list(updated_keys))
+
+    async def import_model(self, nb_samples, word_counts):
         self.nb_samples = nb_samples
         self.word_counts = word_counts
         self._update_log_prob()
-        self.update_model_database()
+        await self.update_model_database()
 
     def export_model(self):
         return self.nb_samples, self.word_counts
 
-    def predict(self, message):
+    async def predict(self, message):
         """Predict whether a message is a spam or not.
 
         Possible outputs:
@@ -247,8 +329,9 @@ class SpamFilter:
 
         for word, count in sp_vect.items():
             if word in self.log_posterior:
-                log_prob_0 += self.log_posterior[word][0] * count
-                log_prob_1 += self.log_posterior[word][1] * count
+                log_posterior_0, log_posterior_1 = self.log_posterior[word]
+                log_prob_0 += log_posterior_0 * count
+                log_prob_1 += log_posterior_1 * count
             else:
                 outliar_count += 1
 
@@ -256,11 +339,11 @@ class SpamFilter:
 
         if outliar_count > self.outliar_threshold:
             pred = -1
-            self.outliar_db.set_key(message["id"], message["content"])
+            await self.outliar_db.set_key(message["id"], json.dumps(sp_vect))
         else:
             r = random.random()
             if r < self.random_confirmation_rate:
-                self.preprocessed_db.set_key(message["id"], message["content"])
+                await self.preprocessed_db.set_key(message["id"], json.dumps(sp_vect))
 
         return pred
 
