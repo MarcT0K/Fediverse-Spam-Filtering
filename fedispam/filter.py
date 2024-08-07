@@ -1,9 +1,9 @@
 import math
+import random
 import string
 from typing import Dict, Optional, List
 
-from fedispam.database import ModelDatabase
-
+from fedispam.database import Database
 
 STOPWORDS = [
     "i",
@@ -141,7 +141,7 @@ def strip_text(text):
     return text.translate(table).lower()
 
 
-class NaiveBayes:
+class SpamFilter:
     """NaiveBayes implementation for **binary classification**
 
     Reference: https://link.springer.com/chapter/10.1007/978-3-540-30549-1_43
@@ -153,13 +153,28 @@ class NaiveBayes:
     word_counts: Optional[Dict[str, List[int]]] = None
     log_default_prob: Optional[List[float]] = None
 
-    def __init__(self, lang="english", outliar_threshold=3, db_file="model.db"):
-        self.outliar_threshold = (
-            outliar_threshold  # Number of unknown words to classify as outliar
-        )
+    def __init__(
+        self, lang="english", outliar_threshold=3, random_confirmation_rate=0.05
+    ):
+        # Number of unknown words to classify as outliar
+        self.outliar_threshold = outliar_threshold
+        # Probability to keep a message for manual validation
+        self.random_confirmation_rate = random_confirmation_rate
+
         self.lang = lang
-        self.db = ModelDatabase(db_file)
-        # TODO: import model from DB
+        self.model_db = Database("model.db")
+        self.outliar_db = Database("outliars.db")
+        self.preprocessed_db = Database("preprocessed.db")
+
+    def start(self):
+        self.model_db.open()
+        self.outliar_db.open()
+        self.preprocessed_db.open()
+
+    def stop(self):
+        self.model_db.close()
+        self.outliar_db.close()
+        self.preprocessed_db.close()
 
     def _update_log_prob(self):
         assert self.word_counts is not None
@@ -223,7 +238,7 @@ class NaiveBayes:
         if self.log_posterior is None or self.log_prior is None:
             raise ValueError("Model must be trained first")
 
-        sp_vect = self._preprocess_text(message)
+        sp_vect = self._preprocess_text(message["content"])
 
         log_prob_0 = self.log_prior[0]
         log_prob_1 = self.log_prior[1]
@@ -241,6 +256,11 @@ class NaiveBayes:
 
         if outliar_count > self.outliar_threshold:
             pred = -1
+            self.outliar_db.set_key(message["id"], message["content"])
+        else:
+            r = random.random()
+            if r < self.random_confirmation_rate:
+                self.preprocessed_db.set_key(message["id"], message["content"])
 
         return pred
 

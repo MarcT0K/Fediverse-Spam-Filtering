@@ -4,6 +4,9 @@ from starlette.routing import Route
 import uvicorn
 
 from fedispam.config import PORT
+from fedispam.filter import SpamFilter
+
+filtering_model = SpamFilter()
 
 
 async def filter_spam(request):
@@ -38,12 +41,6 @@ async def training_data_import(request):
     return JSONResponse({"hello": "world"})
 
 
-def start(): ...
-
-
-def stop(): ...
-
-
 routes = [
     Route("/filter", filter_spam, methods=["POST"]),
     Route("/outliars", get_outliars, methods=["GET"]),
@@ -54,7 +51,12 @@ routes = [
     Route("/training_data/import", training_data_import, methods=["POST"]),
 ]
 
-app = Starlette(debug=True, routes=routes, on_startup=[start], on_shutdown=[stop])
+app = Starlette(
+    debug=True,
+    routes=routes,
+    on_startup=[filtering_model.start],
+    on_shutdown=[filtering_model.stop],
+)
 
 
 def main():
