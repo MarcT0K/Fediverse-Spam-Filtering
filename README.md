@@ -19,6 +19,20 @@ Our system gathers training data in three ways:
 
 This assisted data annotation minimizes the administrator's workload, while enriching the filtering quality. 
 
+## Endpoints
+
+The API provides the following endpoints:
+
+ - [POST] "/filter": predicts whether a message is a spam or not.
+ - [GET] "/outliers": returns the list of outliers identified spam filtering (waiting for a manual decision).
+ - [POST] "/outliers/classify": receives manual decisions for previously identified outliers.
+ - [GET] "/random_check/": returns a list of randomly selected messages requiring a manual check.
+ - [POST] "/random_check/": receives manual decisions for randomly selected messages.
+ - [POST] "/training_data/import": update the spam filtering model based on imported data.
+ - [GET] "/model/import"
+ - [POST] "/model/export"
+
+
 ## Data storage
 
 Our spam filter only uses an embedded key-value store. We create three tables: one for the model parameters, one for the outliers, and one for the randomly picked messages.

@@ -104,7 +104,8 @@ routes = [
     Route("/outliers/classify", classify_outliers, methods=["POST"]),
     Route("/random_check/", random_check_confirmation_get, methods=["GET"]),
     Route("/random_check/", random_check_confirmation_post, methods=["POST"]),
-    Route("/model/import", model_import, methods=["GET"]),
+    Route("/model/import", model_import, methods=["POST"]),
+    Route("/model/export", model_export, methods=["GET"]),
     Route("/training_data/import", training_data_import, methods=["POST"]),
 ]
 
