@@ -24,7 +24,15 @@ async def get_outliars(_request):
 
 
 async def classify_outliars(request):
-    return JSONResponse({"hello": "world"})  # TODO
+    data = await request.json()
+    try:
+        await filtering_model.outliar_manual_confirmation(data)
+    except TypeError:
+        return JSONResponse(
+            {"success": False, "error": "Invalid data format"}, status_code=400
+        )
+
+    return JSONResponse({"success": True})
 
 
 async def random_check_confirmation_get(_request):
@@ -32,7 +40,15 @@ async def random_check_confirmation_get(_request):
 
 
 async def random_check_confirmation_post(request):
-    return JSONResponse({"hello": "world"})  # TODO
+    data = await request.json()
+    try:
+        await filtering_model.random_check_manual_confirmation(data)
+    except TypeError:
+        return JSONResponse(
+            {"success": False, "error": "Invalid data format"}, status_code=400
+        )
+
+    return JSONResponse({"success": True})
 
 
 async def model_import(request):
@@ -51,7 +67,15 @@ async def model_export(_request):
 
 
 async def training_data_import(request):
-    return JSONResponse({"hello": "world"})  # TODO
+    data = await request.json()
+    try:
+        await filtering_model.add_training_data(data)
+    except TypeError:
+        return JSONResponse(
+            {"success": False, "error": "Invalid data format"}, status_code=400
+        )
+
+    return JSONResponse({"success": True})
 
 
 routes = [
