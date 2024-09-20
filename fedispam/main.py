@@ -1,3 +1,5 @@
+import contextlib
+
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.requests import Request
@@ -111,12 +113,15 @@ routes = [
     Route("/training_data/import", training_data_import, methods=["POST"]),
 ]
 
-app = Starlette(
-    debug=True,
-    routes=routes,
-    on_startup=[filtering_model.start],
-    on_shutdown=[filtering_model.stop],
-)
+
+@contextlib.asynccontextmanager
+async def lifespan(app):
+    filtering_model.start()
+    yield
+    filtering_model.stop()
+
+
+app = Starlette(debug=True, routes=routes, lifespan=lifespan)
 
 
 def main():

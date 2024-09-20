@@ -1,9 +1,11 @@
 import dbm
+import pathlib
 
 from asyncio import Lock
 from typing import Dict, List, Union
 
 DB_ENTRY_TYPE = Union[str, bytes]
+DB_DIR = "./"
 
 
 class Database:
@@ -13,7 +15,7 @@ class Database:
         self._db = None
 
     def open(self):
-        self._db = dbm.open(self.db_filename, "c")
+        self._db = dbm.open(DB_DIR + self.db_filename, "c")
 
     def close(self):
         if self._db is not None:

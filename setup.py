@@ -11,4 +11,11 @@ setup(
     entry_points={
         "console_scripts": ["fedispam = fedispam.main:main"],
     },
+    extras_require={
+        "testing": [
+            "pytest",
+            "pytest-asyncio",
+            "async_asgi_testclient",
+        ]
+    },
 )
