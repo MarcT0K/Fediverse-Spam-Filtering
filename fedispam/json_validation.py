@@ -10,6 +10,7 @@ def mastodon_status_validation(status):
         assert isinstance(status["spoiler_text"], str)
         assert isinstance(status["media_attachments"], list)
         assert isinstance(status["tags"], list)
+        assert isinstance(status["mentions"], list)
         assert isinstance(status["sensitive"], bool)
         assert isinstance(status["language"], str)
     except (AssertionError, KeyError):

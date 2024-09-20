@@ -1,10 +1,14 @@
 import json
 import math
 import random
+import re
 import string
 from typing import Dict, Optional, List, Tuple
 
 from fedispam.database import Database
+
+URL_REGEX = r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})"
+LINKREGEX = re.compile(r"<a\s*href=['|\"](.*?)['\"].*?>")
 
 STOPWORDS = [
     "i",
@@ -135,11 +139,6 @@ STOPWORDS = [
     "should",
     "now",
 ]
-
-
-def strip_text(text):
-    table = str.maketrans(dict.fromkeys(string.punctuation))
-    return text.translate(table).lower()
 
 
 class SpamFilter:
@@ -389,20 +388,39 @@ class SpamFilter:
     def _extract_features_from_status(self, status: Dict):
         features = {}
 
-        def preprocess_text(text, key_prefix):
-            stripped_text = strip_text(text)
-            words = stripped_text.split()
-            for word in words:
-                if word not in STOPWORDS:
-                    # Remark: we do not remove punctuation
-                    features[key_prefix + "#" + word] = features.get(word, 0) + 1
+        # Process content
+        ## URL counting
+        mention_urls = [mention["url"] for mention in status["mentions"]]
+        url_count = 0
+        for url in LINKREGEX.findall(status["content"]):
+            if url not in mention_urls:
+                url_count += 1
+        features["urls#"] = url_count
+        # TODO: remove urls (and mentions indirectly)
 
-        preprocess_text(status["content"], "content")
-        preprocess_text(status["spoiler_text"], "spoiler")
+        ## Keyword extraction
+        # TODO: factorize loop
+        stripped_html = re.sub("<[^<]+?>", "", status["content"])
+        table = str.maketrans(dict.fromkeys(string.punctuation))
+        for word in stripped_html.split():
+            stripped_word = word.translate(table).lower()
+            if stripped_word not in STOPWORDS:
+                # Remark: we do not remove punctuation
+                features["content#" + word] = features.get(word, 0) + 1
+
+        stripped_spoiler = status["spoiler_text"].translate(table).lower()
+        for stripped_word in stripped_spoiler.split():
+            if stripped_word not in STOPWORDS:
+                # Remark: we do not remove punctuation
+                features["spoiler#" + stripped_word] = (
+                    features.get(stripped_word, 0) + 1
+                )
+
         for tag in status["tags"]:
             features["tag" + "#" + tag] = 1
 
-        features["media"] = len(status["media_attachment"])
+        features["media"] = len(status["media_attachments"])
         features["sensitive"] = int(status["sensitive"])
+        features["mentions"] = len(status["mentions"])
 
         return features
