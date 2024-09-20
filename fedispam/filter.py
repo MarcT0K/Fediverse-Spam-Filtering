@@ -157,7 +157,7 @@ class SpamFilter:
     ):
         # Number of unknown words to classify as outliar
         self.outliar_threshold = outliar_threshold
-        # Probability to keep a message for manual validation
+        # Probability to keep a status for manual validation
         self.random_confirmation_rate = random_confirmation_rate
 
         self.lang = lang
@@ -166,7 +166,7 @@ class SpamFilter:
         self.random_check_db = Database("random_check.db")
 
         self.nb_samples: List[int] = [0, 0]
-        self.word_counts: Dict[str, List[int]] = {}
+        self.feature_counts: Dict[str, List[int]] = {}
 
     def start(self):
         self.model_db.open()
@@ -184,11 +184,11 @@ class SpamFilter:
                 assert isinstance(key, bytes)
                 dec_key = key[2:].decode()
                 if dec_key.startswith("0/"):
-                    if self.word_counts.get(dec_key) is None:
-                        self.word_counts[dec_key] = [self.decode_int(value), 0]
+                    if self.feature_counts.get(dec_key) is None:
+                        self.feature_counts[dec_key] = [self.decode_int(value), 0]
                 elif dec_key.startswith("1/"):
-                    if self.word_counts.get(dec_key) is None:
-                        self.word_counts[dec_key] = [0, self.decode_int(value)]
+                    if self.feature_counts.get(dec_key) is None:
+                        self.feature_counts[dec_key] = [0, self.decode_int(value)]
 
         self._update_log_prob()
 
@@ -206,22 +206,22 @@ class SpamFilter:
         return int.from_bytes(byte_string, byteorder="big")
 
     def encode_preprocessed(
-        self, decision: int, message_word_count: Dict[str, int]
+        self, decision: int, status_features: Dict[str, int]
     ) -> str:
-        enc_count = json.dumps(message_word_count)
+        enc_count = json.dumps(status_features)
         return str(decision) + "||" + enc_count
 
-    def decode_preprocessed(self, enc_message: str) -> Tuple[int, Dict[str, int]]:
-        enc_decision, enc_count = enc_message.split("||", 1)
+    def decode_preprocessed(self, enc_status: str) -> Tuple[int, Dict[str, int]]:
+        enc_decision, enc_count = enc_status.split("||", 1)
         decision = int(enc_decision)
-        message_word_count = json.loads(enc_count)
-        return decision, message_word_count
+        status_features = json.loads(enc_count)
+        return decision, status_features
 
     def _update_log_prob(self) -> None:
-        assert self.word_counts is not None
+        assert self.feature_counts is not None
         assert self.nb_samples is not None
 
-        nb_nnz_features = len(self.word_counts.keys())
+        nb_nnz_features = len(self.feature_counts.keys())
 
         self.log_prior = [-math.inf, -math.inf]
 
@@ -237,7 +237,7 @@ class SpamFilter:
 
         self.log_posterior = {}
         total_words = [0, 0]
-        for count_0, count_1 in self.word_counts.values():
+        for count_0, count_1 in self.feature_counts.values():
             total_words[0] += count_0
             total_words[1] += count_1
 
@@ -246,7 +246,7 @@ class SpamFilter:
             self.log_default_prob[0] = -math.log(total_words[0] + nb_nnz_features)
             self.log_default_prob[1] = -math.log(total_words[1] + nb_nnz_features)
 
-        for word, (count_0, count_1) in self.word_counts.items():
+        for word, (count_0, count_1) in self.feature_counts.items():
             posterior_0 = math.log(1 + count_0) - math.log(
                 total_words[0] + nb_nnz_features
             )
@@ -262,7 +262,7 @@ class SpamFilter:
     ) -> None:
         if updated_keys is None:  # Overwrite the whole database
             await self.model_db.del_all_keys()
-            updated_keys = list(self.word_counts.keys())
+            updated_keys = list(self.feature_counts.keys())
 
         db_dict = {}
         # We use "#" as prefix for special model information
@@ -270,40 +270,40 @@ class SpamFilter:
         db_dict["#class1"] = self.encode_int(self.nb_samples[1])
 
         for key in updated_keys:
-            value_list = self.word_counts[key]
+            value_list = self.feature_counts[key]
             db_dict["0/" + key] = self.encode_int(value_list[0])
             db_dict["1/" + key] = self.encode_int(value_list[0])
 
         await self.model_db.set_multiple_keys(db_dict)
 
-    def _add_word_count_to_model(self, message_word_count, message_type):
+    def _add_feature_counts_to_model(self, status_features, status_type):
         updated_keys = set()
-        for word, count in message_word_count.items():
-            curr_count = self.word_counts.get(word, [0, 0])
-            curr_count[message_type] += count
-            self.word_counts[word] = curr_count
-            self.nb_samples[message_type] += 1
-            updated_keys.add(word)
+        for feature, count in status_features.items():
+            curr_count = self.feature_counts.get(feature, [0, 0])
+            curr_count[status_type] += count
+            self.feature_counts[feature] = curr_count
+            self.nb_samples[status_type] += 1
+            updated_keys.add(feature)
 
         return updated_keys
 
-    async def add_training_data(self, data: List[Tuple[str, int]]):
+    async def add_training_data(self, data: List[Tuple[Dict, int]]):
         updated_keys = set()
-        for message_content, decision in data:
-            message_word_count = self._preprocess_text(message_content)
+        for status, decision in data:
+            status_features = self._extract_features_from_status(status)
             updated_keys = updated_keys.union(
-                self._add_word_count_to_model(message_word_count, decision)
+                self._add_feature_counts_to_model(status_features, decision)
             )
 
         await self.update_model_database(list(updated_keys))
 
     async def outliar_manual_confirmation(self, data: List[Tuple[str, int]]) -> None:
         updated_keys = set()
-        for message_id, decision in data:
-            enc = await self.outliar_db.get_and_del_key(message_id)
-            message_word_count = json.loads(enc)
+        for status_id, decision in data:
+            enc = await self.outliar_db.get_and_del_key(status_id)
+            status_feature_count = json.loads(enc)
             updated_keys = updated_keys.union(
-                self._add_word_count_to_model(message_word_count, decision)
+                self._add_feature_counts_to_model(status_feature_count, decision)
             )
 
         await self.update_model_database(list(updated_keys))
@@ -316,11 +316,11 @@ class SpamFilter:
         self, data: List[Tuple[str, int]]
     ) -> None:
         updated_keys = set()
-        for message_id, decision in data:
-            enc = await self.random_check_db.get_and_del_key(message_id)
-            message_word_count = json.loads(enc)
+        for status_id, decision in data:
+            enc = await self.random_check_db.get_and_del_key(status_id)
+            status_feature_count = json.loads(enc)
             updated_keys = updated_keys.union(
-                self._add_word_count_to_model(message_word_count, decision)
+                self._add_feature_counts_to_model(status_feature_count, decision)
             )
 
         await self.update_model_database(list(updated_keys))
@@ -328,23 +328,23 @@ class SpamFilter:
     async def get_all_random_checks(self) -> List[Tuple[str, int]]:
         random_check_dict = await self.random_check_db.get_all_key_values()
         res = []
-        for message_id, payload in random_check_dict.items():
+        for status_id, payload in random_check_dict.items():
             decision, _ = self.decode_preprocessed(payload.decode())
-            res.append((message_id.decode(), decision))
+            res.append((status_id.decode(), decision))
         return res
 
     async def import_model(self, model) -> None:
         self.nb_samples = model["nb_samples"]
-        self.word_counts = model["word_counts"]
+        self.feature_counts = model["feature_counts"]
         self._update_log_prob()
         await self.update_model_database()
 
     def export_model(self):
-        model = {"nb_samples": self.nb_samples, "word_counts": self.word_counts}
+        model = {"nb_samples": self.nb_samples, "feature_counts": self.feature_counts}
         return model
 
-    async def predict(self, message) -> int:
-        """Predict whether a message is a spam or not.
+    async def predict(self, status) -> int:
+        """Predict whether a status is a spam or not.
 
         Possible outputs:
         -> 1 = Spam
@@ -354,43 +354,55 @@ class SpamFilter:
         if self.log_posterior is None or self.log_prior is None:
             raise ValueError("Model must be trained first")
 
-        sp_vect = self._preprocess_text(message["content"])
+        features = self._extract_features_from_status(status)
 
         log_prob_0 = self.log_prior[0]
         log_prob_1 = self.log_prior[1]
 
         outliar_count = 0
 
-        for word, count in sp_vect.items():
-            if word in self.log_posterior:
-                log_posterior_0, log_posterior_1 = self.log_posterior[word]
+        for feat, count in features.items():
+            if feat in self.log_posterior:
+                log_posterior_0, log_posterior_1 = self.log_posterior[feat]
                 log_prob_0 += log_posterior_0 * count
                 log_prob_1 += log_posterior_1 * count
             else:
-                outliar_count += 1
+                if feat.startswith("content#"):
+                    # We count outliars only in the content field
+                    outliar_count += 1
 
         pred = int(log_prob_1 > log_prob_0)
 
         if outliar_count > self.outliar_threshold:
             pred = -1
-            await self.outliar_db.set_key(message["id"], json.dumps(sp_vect))
+            await self.outliar_db.set_key(status["id"], json.dumps(features))
         else:
             r = random.random()
             if r < self.random_confirmation_rate:
 
                 await self.random_check_db.set_key(
-                    message["id"], self.encode_preprocessed(pred, sp_vect)
+                    status["id"], self.encode_preprocessed(pred, features)
                 )
 
         return pred
 
-    def _preprocess_text(self, message):
-        message = strip_text(message)
-        sp_vect = {}
-        words = message.split()
-        for word in words:
-            if word not in STOPWORDS:
-                # Remark: we do not remove punctuation
-                sp_vect[word] = sp_vect.get(word, 0) + 1
+    def _extract_features_from_status(self, status: Dict):
+        features = {}
 
-        return sp_vect
+        def preprocess_text(text, key_prefix):
+            stripped_text = strip_text(text)
+            words = stripped_text.split()
+            for word in words:
+                if word not in STOPWORDS:
+                    # Remark: we do not remove punctuation
+                    features[key_prefix + "#" + word] = features.get(word, 0) + 1
+
+        preprocess_text(status["content"], "content")
+        preprocess_text(status["spoiler_text"], "spoiler")
+        for tag in status["tags"]:
+            features["tag" + "#" + tag] = 1
+
+        features["media"] = len(status["media_attachment"])
+        features["sensitive"] = int(status["sensitive"])
+
+        return features

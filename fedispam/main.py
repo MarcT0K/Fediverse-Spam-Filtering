@@ -6,17 +6,18 @@ import uvicorn
 
 from fedispam.config import PORT
 from fedispam.filter import SpamFilter
+from fedispam.json_validation import decisions_validation, mastodon_status_validation
 
 filtering_model = SpamFilter()
 
 
 async def filter_spam(request: Request):
-    """Predicts whether a message is a spam or not.
+    """Predicts whether a status is a spam or not.
 
-    Request body: {"id": message_ID, "content": message_content}
+    Request body: {"id": status_ID, "content": status_content}
     """
     data = await request.json()
-    if "id" not in data or "content" not in data:
+    if not mastodon_status_validation(data):
         return JSONResponse({"error": "Invalid data format"}, status_code=400)
 
     decision = await filtering_model.predict(data)
@@ -34,33 +35,32 @@ async def classify_outliers(request):
     Request body: [[outliar_ID_1, decision_1], ...]
     """
     data = await request.json()
-    try:
-        await filtering_model.outliar_manual_confirmation(data)
-    except TypeError:
+    if not decisions_validation(data):
         return JSONResponse(
             {"success": False, "error": "Invalid data format"}, status_code=400
         )
+
+    await filtering_model.outliar_manual_confirmation(data)
 
     return JSONResponse({"success": True})
 
 
 async def random_check_confirmation_get(_request):
-    """Returns a list of randomly selected messages requiring a manual check."""
+    """Returns a list of randomly selected statuses requiring a manual check."""
     return JSONResponse(await filtering_model.get_all_random_checks())
 
 
 async def random_check_confirmation_post(request):
-    """Receives manual decisions for randomly selected messages.
+    """Receives manual decisions for randomly selected statuses.
 
-    Request body: [[message_ID_1, decision_1], ...]
+    Request body: [[status_ID_1, decision_1], ...]
     """
     data = await request.json()
-    try:
-        await filtering_model.random_check_manual_confirmation(data)
-    except TypeError:
+    if not decisions_validation(data):
         return JSONResponse(
             {"success": False, "error": "Invalid data format"}, status_code=400
         )
+    await filtering_model.random_check_manual_confirmation(data)
 
     return JSONResponse({"success": True})
 
@@ -85,15 +85,17 @@ async def model_export(_request):
 async def training_data_import(request):
     """Update the model based on imported data
 
-    Request body: [[message_content_1, message_type_1], ...]
+    Request body: [[status_content_1, status_type_1], ...]
     """
     data = await request.json()
-    try:
-        await filtering_model.add_training_data(data)
-    except TypeError:
-        return JSONResponse(
-            {"success": False, "error": "Invalid data format"}, status_code=400
-        )
+
+    for status in data:
+        if not mastodon_status_validation(status):
+            return JSONResponse(
+                {"success": False, "error": "Invalid data format"}, status_code=400
+            )
+
+    await filtering_model.add_training_data(data)
 
     return JSONResponse({"success": True})
 
