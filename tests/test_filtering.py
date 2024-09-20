@@ -6,7 +6,7 @@ from async_asgi_testclient import TestClient
 
 import fedispam
 import fedispam.database
-from fedispam.main import app, lifespan, filtering_model
+from fedispam.main import app, lifespan
 
 # All test coroutines will be treated as marked.
 pytestmark = pytest.mark.asyncio
