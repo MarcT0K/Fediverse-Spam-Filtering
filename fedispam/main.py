@@ -1,4 +1,5 @@
 import contextlib
+import json
 
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
@@ -89,13 +90,20 @@ async def training_data_import(request):
 
     Request body: [[status_content_1, status_type_1], ...]
     """
-    data = await request.json()
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return JSONResponse(
+            {"success": False, "error": "Missing data"}, status_code=400
+        )
 
-    for status in data:
-        if not mastodon_status_validation(status):
-            return JSONResponse(
-                {"success": False, "error": "Invalid data format"}, status_code=400
-            )
+    try:
+        for status, _decision in data:
+            assert mastodon_status_validation(status)
+    except (ValueError, TypeError, AssertionError):
+        return JSONResponse(
+            {"success": False, "error": "Invalid data format"}, status_code=400
+        )
 
     await filtering_model.add_training_data(data)
 

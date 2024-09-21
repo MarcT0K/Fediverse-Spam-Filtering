@@ -1,12 +1,6 @@
-from unittest.mock import patch
-
 import pytest
 
-from async_asgi_testclient import TestClient
-
-import fedispam
-import fedispam.database
-from fedispam.main import app, lifespan, filtering_model
+from fedispam.main import filtering_model
 
 from data import TRAINING_DATA
 
@@ -14,15 +8,7 @@ from data import TRAINING_DATA
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.fixture
-async def test_client(tmp_path):
-    with patch.object(fedispam.database, "DB_DIR", str(tmp_path)):
-        async with lifespan(app):
-            client = TestClient(app)
-            yield client
-
-
-async def test_feature_extraction(test_client):
+async def test_feature_extraction(_test_client):
     features = filtering_model._extract_features_from_status(TRAINING_DATA[0][0])
     assert features == {
         "content#beyond": 1,
@@ -111,5 +97,22 @@ async def test_feature_extraction(test_client):
 
 
 async def test_data_import(test_client):
+    resp = await test_client.post("/training_data/import")
+    assert resp.json() == {"success": False, "error": "Missing data"}
+    assert resp.status_code == 400
+
+    resp = await test_client.post("/training_data/import", json=["Invalid", "input"])
+    assert resp.json() == {"success": False, "error": "Invalid data format"}
+    assert resp.status_code == 400
+
+    resp = await test_client.post(
+        "/training_data/import", json=[[{"Invalid": "status"}, 0]]
+    )
+    assert resp.json() == {"success": False, "error": "Invalid data format"}
+    assert resp.status_code == 400
+
     resp = await test_client.post("/training_data/import", json=TRAINING_DATA)
-    # TODO assert
+    assert resp.json() == {"success": True}
+    assert resp.status_code == 200
+
+    # TODO verify the model and database
