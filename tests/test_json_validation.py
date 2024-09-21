@@ -12,3 +12,12 @@ def test_status_validation():
     assert not mastodon_status_validation(status)
     del status["sensitive"]
     assert not mastodon_status_validation(status)
+
+
+def test_decision_validation():
+    list_decisions = TRAINING_DATA
+    assert not decisions_validation(list_of_decisions=list_decisions)
+    list_decisions = [
+        [status["id"], bool(decision)] for status, decision in TRAINING_DATA
+    ]
+    assert decisions_validation(list_of_decisions=list_decisions)
