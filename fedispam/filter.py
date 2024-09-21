@@ -2,13 +2,13 @@ import json
 import math
 import random
 import re
-import string
 from typing import Dict, Optional, List, Tuple
 
 from fedispam.database import Database
 
 URL_REGEX = r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})"
 LINKREGEX = re.compile(r"<a\s*href=['|\"](.*?)['\"].*?>")
+PUNCTUATION = r'!"#%&\'()*,-./:;?@[\\]_{}¡§«¶·»¿;·՚՛՜՝՞՟։֊־׀׃׆׳״؉؊،؍؛؞؟٪٫٬٭۔܀܁܂܃܄܅܆܇܈܉܊܋܌܍߷߸߹࠰࠱࠲࠳࠴࠵࠶࠷࠸࠹࠺࠻࠼࠽࠾࡞।॥॰৽੶૰౷಄෴๏๚๛༄༅༆༇༈༉༊་༌།༎༏༐༑༒༔༺༻༼༽྅࿐࿑࿒࿓࿔࿙࿚၊။၌၍၎၏჻፠፡።፣፤፥፦፧፨᐀᙮᚛᚜᛫᛬᛭᜵᜶។៕៖៘៙៚᠀᠁᠂᠃᠄᠅᠆᠇᠈᠉᠊᥄᥅᨞᨟᪠᪡᪢᪣᪤᪥᪦᪨᪩᪪᪫᪬᪭᭚᭛᭜᭝᭞᭟᭠᯼᯽᯾᯿᰻᰼᰽᰾᰿᱾᱿᳀᳁᳂᳃᳄᳅᳆᳇᳓‐‑‒–—―‖‗‘’‚‛“”„‟†‡•‣․‥…‧‰‱′″‴‵‶‷‸‹›※‼‽‾‿⁀⁁⁂⁃⁅⁆⁇⁈⁉⁊⁋⁌⁍⁎⁏⁐⁑⁓⁔⁕⁖⁗⁘⁙⁚⁛⁜⁝⁞⁽⁾₍₎⌈⌉⌊⌋〈〉❨❩❪❫❬❭❮❯❰❱❲❳❴❵⟅⟆⟦⟧⟨⟩⟪⟫⟬⟭⟮⟯⦃⦄⦅⦆⦇⦈⦉⦊⦋⦌⦍⦎⦏⦐⦑⦒⦓⦔⦕⦖⦗⦘⧘⧙⧚⧛⧼⧽⳹⳺⳻⳼⳾⳿⵰⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊⸋⸌⸍⸎⸏⸐⸑⸒⸓⸔⸕⸖⸗⸘⸙⸚⸛⸜⸝⸞⸟⸠⸡⸢⸣⸤⸥⸦⸧⸨⸩⸪⸫⸬⸭⸮⸰⸱⸲⸳⸴⸵⸶⸷⸸⸹⸺⸻⸼⸽⸾⸿⹀⹁⹂⹃⹄⹅⹆⹇⹈⹉⹊⹋⹌⹍⹎⹏⹒、。〃〈〉《》「」『』【】〔〕〖〗〘〙〚〛〜〝〞〟〰〽゠・꓾꓿꘍꘎꘏꙳꙾꛲꛳꛴꛵꛶꛷꡴꡵꡶꡷꣎꣏꣸꣹꣺꣼꤮꤯꥟꧁꧂꧃꧄꧅꧆꧇꧈꧉꧊꧋꧌꧍꧞꧟꩜꩝꩞꩟꫞꫟꫰꫱꯫﴾﴿︐︑︒︓︔︕︖︗︘︙︰︱︲︳︴︵︶︷︸︹︺︻︼︽︾︿﹀﹁﹂﹃﹄﹅﹆﹇﹈﹉﹊﹋﹌﹍﹎﹏﹐﹑﹒﹔﹕﹖﹗﹘﹙﹚﹛﹜﹝﹞﹟﹠﹡﹣﹨﹪﹫！＂＃％＆＇（）＊，－．／：；？＠［＼］＿｛｝｟｠｡｢｣､･𐄀𐄁𐄂𐎟𐏐𐕯𐡗𐤟𐤿𐩐𐩑𐩒𐩓𐩔𐩕𐩖𐩗𐩘𐩿𐫰𐫱𐫲𐫳𐫴𐫵𐫶𐬹𐬺𐬻𐬼𐬽𐬾𐬿𐮙𐮚𐮛𐮜𐺭𐽕𐽖𐽗𐽘𐽙𑁇𑁈𑁉𑁊𑁋𑁌𑁍𑂻𑂼𑂾𑂿𑃀𑃁𑅀𑅁𑅂𑅃𑅴𑅵𑇅𑇆𑇇𑇈𑇍𑇛𑇝𑇞𑇟𑈸𑈹𑈺𑈻𑈼𑈽𑊩𑑋𑑌𑑍𑑎𑑏𑑚𑑛𑑝𑓆𑗁𑗂𑗃𑗄𑗅𑗆𑗇𑗈𑗉𑗊𑗋𑗌𑗍𑗎𑗏𑗐𑗑𑗒𑗓𑗔𑗕𑗖𑗗𑙁𑙂𑙃𑙠𑙡𑙢𑙣𑙤𑙥𑙦𑙧𑙨𑙩𑙪𑙫𑙬𑜼𑜽𑜾𑠻𑥄𑥅𑥆𑧢𑨿𑩀𑩁𑩂𑩃𑩄𑩅𑩆𑪚𑪛𑪜𑪞𑪟𑪠𑪡𑪢𑱁𑱂𑱃𑱄𑱅𑱰𑱱𑻷𑻸𑿿𒑰𒑱𒑲𒑳𒑴𖩮𖩯𖫵𖬷𖬸𖬹𖬺𖬻𖭄𖺗𖺘𖺙𖺚𖿢𛲟𝪇𝪈𝪉𝪊𝪋𞥞𞥟'
 
 STOPWORDS = [
     "i",
@@ -388,6 +388,14 @@ class SpamFilter:
     def _extract_features_from_status(self, status: Dict):
         features = {}
 
+        def extract_features_from_text(text, prefix):
+            table = str.maketrans(PUNCTUATION, " " * len(PUNCTUATION))
+            stripped_text = text.translate(table).lower()
+            for word in stripped_text.split():
+                if word not in STOPWORDS:
+                    # Remark: we do not remove punctuation
+                    features[prefix + "#" + word] = features.get(word, 0) + 1
+
         # Process content
         ## URL counting
         mention_urls = [mention["url"] for mention in status["mentions"]]
@@ -396,29 +404,25 @@ class SpamFilter:
             if url not in mention_urls:
                 url_count += 1
         features["urls#"] = url_count
-        # TODO: remove urls (and mentions indirectly)
+        content = re.sub(
+            r"<a[^>]*>(.*?)</a>", "", status["content"]
+        )  # remove <a> tags (i.e., URLs) and their content
+
+        stripped_html = re.sub(
+            "<[^<]+?>", " ", content
+        )  # Remove HTML tags (and keep content)
 
         ## Keyword extraction
-        # TODO: factorize loop
-        stripped_html = re.sub("<[^<]+?>", "", status["content"])
-        table = str.maketrans(dict.fromkeys(string.punctuation))
-        for word in stripped_html.split():
-            stripped_word = word.translate(table).lower()
-            if stripped_word not in STOPWORDS:
-                # Remark: we do not remove punctuation
-                features["content#" + word] = features.get(word, 0) + 1
+        extract_features_from_text(stripped_html, "content")
 
-        stripped_spoiler = status["spoiler_text"].translate(table).lower()
-        for stripped_word in stripped_spoiler.split():
-            if stripped_word not in STOPWORDS:
-                # Remark: we do not remove punctuation
-                features["spoiler#" + stripped_word] = (
-                    features.get(stripped_word, 0) + 1
-                )
+        # Process spoiler text
+        extract_features_from_text(status["spoiler_text"], "spoiler")
 
+        # Process tags
         for tag in status["tags"]:
-            features["tag" + "#" + tag] = 1
+            features["tag" + "#" + tag.lower()] = 1
 
+        # Process others
         features["media"] = len(status["media_attachments"])
         features["sensitive"] = int(status["sensitive"])
         features["mentions"] = len(status["mentions"])
