@@ -150,6 +150,8 @@ class SpamFilter:
     log_prior: Optional[List[float]] = None
     log_posterior: Optional[Dict[str, List[float]]] = None
     log_default_prob: Optional[List[float]] = None
+    nb_samples: Optional[List[int]] = None
+    feature_counts: Optional[Dict[str, List[int]]] = None
 
     def __init__(
         self, lang="english", outliar_threshold=3, random_confirmation_rate=0.05
@@ -163,9 +165,6 @@ class SpamFilter:
         self.model_db = Database("model.db")
         self.outliar_db = Database("outliers.db")
         self.random_check_db = Database("random_check.db")
-
-        self.nb_samples: List[int] = [0, 0]
-        self.feature_counts: Dict[str, List[int]] = {}
 
     def start(self):
         self.model_db.open()
@@ -188,6 +187,9 @@ class SpamFilter:
                 elif dec_key.startswith("1/"):
                     if self.feature_counts.get(dec_key) is None:
                         self.feature_counts[dec_key] = [0, self.decode_int(value)]
+        else:
+            self.nb_samples: List[int] = [0, 0]
+            self.feature_counts: Dict[str, List[int]] = {}
 
         self._update_log_prob()
 
@@ -277,11 +279,11 @@ class SpamFilter:
 
     def _add_feature_counts_to_model(self, status_features, status_type):
         updated_keys = set()
+        self.nb_samples[status_type] += 1
         for feature, count in status_features.items():
             curr_count = self.feature_counts.get(feature, [0, 0])
             curr_count[status_type] += count
             self.feature_counts[feature] = curr_count
-            self.nb_samples[status_type] += 1
             updated_keys.add(feature)
 
         return updated_keys

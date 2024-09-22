@@ -1,6 +1,10 @@
-from fedispam.json_validation import mastodon_status_validation, decisions_validation
+from fedispam.json_validation import (
+    mastodon_status_validation,
+    decisions_validation,
+    model_validation,
+)
 
-from data import TRAINING_DATA
+from data import TRAINING_DATA, MODEL_EXPORT
 
 
 def test_status_validation():
@@ -21,3 +25,32 @@ def test_decision_validation():
         [status["id"], bool(decision)] for status, decision in TRAINING_DATA
     ]
     assert decisions_validation(list_of_decisions=list_decisions)
+
+
+def test_model_validation():
+    assert not model_validation({})
+    assert model_validation(
+        {
+            "feature_counts": {},
+            "nb_samples": [
+                0,
+                0,
+            ],
+        }
+    )
+    assert not model_validation(
+        {
+            "feature_counts": {},
+            "nb_samples": [
+                0,
+                0,
+                1,
+            ],
+        }
+    )
+    assert not model_validation(
+        {
+            "feature_counts": {},
+        }
+    )
+    assert model_validation(MODEL_EXPORT)

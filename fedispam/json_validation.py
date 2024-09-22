@@ -34,3 +34,18 @@ def decisions_validation(list_of_decisions):
         return False
 
     return True
+
+
+def model_validation(model):
+    """Minimal validation to check the model"""
+    try:
+        assert isinstance(model, dict)
+        assert "nb_samples" in model
+        assert "feature_counts" in model
+        assert isinstance(model["nb_samples"], list)
+        assert len(model["nb_samples"]) == 2
+        assert isinstance(model["feature_counts"], dict)
+    except AssertionError:
+        return False
+
+    return True

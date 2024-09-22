@@ -9,7 +9,11 @@ import uvicorn
 
 from fedispam.config import PORT
 from fedispam.filter import SpamFilter
-from fedispam.json_validation import decisions_validation, mastodon_status_validation
+from fedispam.json_validation import (
+    decisions_validation,
+    mastodon_status_validation,
+    model_validation,
+)
 
 filtering_model = SpamFilter()
 
@@ -70,13 +74,13 @@ async def random_check_confirmation_post(request):
 
 async def model_import(request):
     """Import model parameters"""
-    data = await request.json()
-    if "model" not in data:
+    model = await request.json()
+    if not model_validation(model):
         return JSONResponse(
-            {"success": False, "error": "Model is missing"}, status_code=400
+            {"success": False, "error": "Invalid model"}, status_code=400
         )
 
-    await filtering_model.import_model(data["model"])
+    await filtering_model.import_model(model)
     return JSONResponse({"success": True})
 
 
