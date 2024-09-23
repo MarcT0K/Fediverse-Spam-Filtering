@@ -166,30 +166,31 @@ class SpamFilter:
         self.model_db = Database("model.db")
 
     def start(self):
-
         self.outliar_db.open()
         self.random_checks_db.open()
         self.model_db.open()
 
-        model_information = self.model_db.extract_db()
+        # Default values
+        self.nb_samples = [0, 0]
+        self.feature_counts = {}
 
+        model_information = self.model_db.extract_db()
         if model_information:
             # We use "#" as prefix for special model information
-            self.nb_samples.append(self.decode_int(model_information[b"#class0"]))
-            self.nb_samples.append(self.decode_int(model_information[b"#class1"]))
+            self.nb_samples[0] = self.decode_int(model_information[b"#class0"])
+            self.nb_samples[1] = self.decode_int(model_information[b"#class1"])
             # We use "0/" as prefix for keywords in class 0 and "1/" for class 1
             for key, value in model_information.items():
                 assert isinstance(key, bytes)
-                dec_key = key[2:].decode()
-                if dec_key.startswith("0/"):
-                    if self.feature_counts.get(dec_key) is None:
-                        self.feature_counts[dec_key] = [self.decode_int(value), 0]
-                elif dec_key.startswith("1/"):
-                    if self.feature_counts.get(dec_key) is None:
-                        self.feature_counts[dec_key] = [0, self.decode_int(value)]
-        else:
-            self.nb_samples: List[int] = [0, 0]
-            self.feature_counts: Dict[str, List[int]] = {}
+                dec_feat = key[2:].decode()
+                if key.startswith(b"0/"):
+                    feature_values = self.feature_counts.get(dec_feat, [0, 0])
+                    feature_values[0] = self.decode_int(value)
+                    self.feature_counts[dec_feat] = feature_values
+                elif key.startswith(b"1/"):
+                    feature_values = self.feature_counts.get(dec_feat, [0, 0])
+                    feature_values[1] = self.decode_int(value)
+                    self.feature_counts[dec_feat] = feature_values
 
         self._update_log_prob()
 
@@ -273,7 +274,7 @@ class SpamFilter:
         for key in updated_keys:
             value_list = self.feature_counts[key]
             db_dict["0/" + key] = self.encode_int(value_list[0])
-            db_dict["1/" + key] = self.encode_int(value_list[0])
+            db_dict["1/" + key] = self.encode_int(value_list[1])
 
         await self.model_db.set_multiple_keys(db_dict)
 
