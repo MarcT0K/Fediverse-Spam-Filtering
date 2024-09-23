@@ -2,7 +2,7 @@ import pytest
 
 from fedispam.main import filtering_model
 
-from data import TRAINING_DATA, MODEL_EXPORT
+from data import TRAINING_DATA, MODEL_EXPORT, OUTLIAR, FEATURE_COUNTS
 
 # All test coroutines will be treated as marked.
 pytestmark = pytest.mark.asyncio
@@ -112,12 +112,15 @@ async def test_data_import(test_client):
     assert resp.status_code == 400
 
     assert filtering_model.nb_samples == [0, 0]
+    assert filtering_model.log_posterior is not None
+    log_prob_before = filtering_model.log_posterior.copy()
 
     resp = await test_client.post("/training_data/import", json=TRAINING_DATA)
     assert resp.json() == {"success": True}
     assert resp.status_code == 200
 
     assert filtering_model.nb_samples == [2, 1]
+    assert log_prob_before != filtering_model.log_posterior
 
 
 async def test_model_export(test_client):
@@ -171,3 +174,59 @@ async def test_model_import(test_client):
     assert resp.status_code == 200
     assert resp.json() == {"success": True}
     assert filtering_model.nb_samples == [2, 1]
+
+
+async def test_filter(test_client):
+    resp = await test_client.post("/model/import", json=MODEL_EXPORT)
+    assert resp.status_code == 200
+    assert resp.json() == {"success": True}
+    assert filtering_model.nb_samples == [2, 1]
+
+    resp = await test_client.post("/filter", json=TRAINING_DATA[0][0])
+    assert resp.status_code == 200
+    assert resp.json() == {"decision": 0, "id": "113171648429213722"}
+
+    resp = await test_client.post("/filter", json=TRAINING_DATA[2][0])
+    assert resp.status_code == 200
+    assert resp.json() == {"decision": 1, "id": "113171206365051746"}
+
+
+async def test_outliar(test_client):
+    resp = await test_client.post("/model/import", json=MODEL_EXPORT)
+    assert resp.status_code == 200
+    assert resp.json() == {"success": True}
+    assert filtering_model.nb_samples == [2, 1]
+
+    resp = await test_client.get("/outliers")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+    resp = await test_client.post("/filter", json=OUTLIAR)
+    assert resp.status_code == 200
+    assert resp.json() == {"decision": -1, "id": "113181206365051836"}
+
+    resp = await test_client.get("/outliers")
+    assert resp.status_code == 200
+    assert resp.json() == ["113181206365051836"]
+
+    assert filtering_model.feature_counts == FEATURE_COUNTS
+    assert filtering_model.log_posterior is not None
+    log_prob_before = filtering_model.log_posterior.copy()
+
+    resp = await test_client.post(
+        "/outliers/classify", json=[["113181206365051836", True]]
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"success": True}
+    assert filtering_model.nb_samples == [2, 2]
+
+    assert filtering_model.feature_counts != FEATURE_COUNTS
+    assert log_prob_before != filtering_model.log_posterior
+
+    resp = await test_client.get("/outliers")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+    resp = await test_client.post("/filter", json=OUTLIAR)
+    assert resp.status_code == 200
+    assert resp.json() == {"decision": 1, "id": "113181206365051836"}

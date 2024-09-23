@@ -277,37 +277,49 @@ class SpamFilter:
 
         await self.model_db.set_multiple_keys(db_dict)
 
-    def _add_feature_counts_to_model(self, status_features, status_type):
-        updated_keys = set()
-        self.nb_samples[status_type] += 1
-        for feature, count in status_features.items():
-            curr_count = self.feature_counts.get(feature, [0, 0])
-            curr_count[status_type] += count
-            self.feature_counts[feature] = curr_count
-            updated_keys.add(feature)
+    async def _update_model(self, model_update):
+        self.nb_samples[0] += model_update["nb_samples"][0]
+        self.nb_samples[1] += model_update["nb_samples"][1]
 
-        return updated_keys
+        for feature, counts in model_update["feature_counts"].items():
+            curr_counts = self.feature_counts.get(feature, [0, 0])
+            curr_counts[0] += counts[0]
+            curr_counts[1] += counts[1]
+            self.feature_counts[feature] = curr_counts
+
+        self._update_log_prob()
+        await self.update_model_database(model_update["feature_counts"].keys())
+
+    @staticmethod
+    def __feature_dictionary_update(feat_dict, status_features, status_type):
+        for feature, count in status_features.items():
+            curr_count = feat_dict.get(feature, [0, 0])
+            curr_count[status_type] += count
+            feat_dict[feature] = curr_count
+        return feat_dict
 
     async def add_training_data(self, data: List[Tuple[Dict, int]]):
-        updated_keys = set()
+        model_update = {"nb_samples": [0, 0], "feature_counts": {}}
         for status, decision in data:
             status_features = self._extract_features_from_status(status)
-            updated_keys = updated_keys.union(
-                self._add_feature_counts_to_model(status_features, decision)
+            model_update["nb_samples"][decision] += 1
+            model_update["feature_counts"] = SpamFilter.__feature_dictionary_update(
+                model_update["feature_counts"], status_features, decision
             )
 
-        await self.update_model_database(list(updated_keys))
+        await self._update_model(model_update)
 
     async def outliar_manual_confirmation(self, data: List[Tuple[str, int]]) -> None:
-        updated_keys = set()
+        model_update = {"nb_samples": [0, 0], "feature_counts": {}}
         for status_id, decision in data:
-            enc = await self.outliar_db.get_and_del_key(status_id)
-            status_feature_count = json.loads(enc)
-            updated_keys = updated_keys.union(
-                self._add_feature_counts_to_model(status_feature_count, decision)
+            enc = await self.outliar_db.get_val_and_del_key(status_id)
+            status_features = json.loads(enc)
+            model_update["nb_samples"][decision] += 1
+            model_update["feature_counts"] = SpamFilter.__feature_dictionary_update(
+                model_update["feature_counts"], status_features, decision
             )
 
-        await self.update_model_database(list(updated_keys))
+        await self._update_model(model_update)
 
     async def get_all_outliers(self) -> List[str]:
         outliers = await self.outliar_db.get_all_keys()
@@ -316,15 +328,16 @@ class SpamFilter:
     async def random_check_manual_confirmation(
         self, data: List[Tuple[str, int]]
     ) -> None:
-        updated_keys = set()
+        model_update = {"nb_samples": [0, 0], "feature_counts": {}}
         for status_id, decision in data:
-            enc = await self.random_check_db.get_and_del_key(status_id)
-            status_feature_count = json.loads(enc)
-            updated_keys = updated_keys.union(
-                self._add_feature_counts_to_model(status_feature_count, decision)
+            enc = await self.random_check_db.get_val_and_del_key(status_id)
+            status_features = json.loads(enc)
+            model_update["nb_samples"][decision] += 1
+            model_update["feature_counts"] = SpamFilter.__feature_dictionary_update(
+                model_update["feature_counts"], status_features, decision
             )
 
-        await self.update_model_database(list(updated_keys))
+        await self._update_model(model_update)
 
     async def get_all_random_checks(self) -> List[Tuple[str, int]]:
         random_check_dict = await self.random_check_db.get_all_key_values()
@@ -352,9 +365,6 @@ class SpamFilter:
         -> 0 = Ham
         -> -1 = Outliar
         """
-        if self.log_posterior is None or self.log_prior is None:
-            raise ValueError("Model must be trained first")
-
         features = self._extract_features_from_status(status)
 
         log_prob_0 = self.log_prior[0]

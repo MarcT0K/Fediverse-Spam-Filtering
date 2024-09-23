@@ -29,6 +29,7 @@ async def filter_spam(request: Request):
 
     decision = await filtering_model.predict(data)
     return JSONResponse({"id": data["id"], "decision": decision})
+    # 0: Ham, 1: Spam, -1:Outlier
 
 
 async def get_outliers(_request):
@@ -119,7 +120,7 @@ routes = [
     Route("/outliers", get_outliers, methods=["GET"]),
     Route("/outliers/classify", classify_outliers, methods=["POST"]),
     Route("/random_check/", random_check_confirmation_get, methods=["GET"]),
-    Route("/random_check/", random_check_confirmation_post, methods=["POST"]),
+    Route("/random_check/clasify", random_check_confirmation_post, methods=["POST"]),
     Route("/model/import", model_import, methods=["POST"]),
     Route("/model/export", model_export, methods=["GET"]),
     Route("/training_data/import", training_data_import, methods=["POST"]),

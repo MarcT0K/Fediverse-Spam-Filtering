@@ -44,7 +44,7 @@ class Database:
             val = self._db[key]
         return val
 
-    async def get_and_del_key(self, key: DB_ENTRY_TYPE) -> bytes:
+    async def get_val_and_del_key(self, key: DB_ENTRY_TYPE) -> bytes:
         assert self._db is not None
         async with self._lock:
             val = self._db[key]
