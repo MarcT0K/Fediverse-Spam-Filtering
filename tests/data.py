@@ -76,6 +76,18 @@ TRAINING_DATA = [
     ),
 ]
 
+TEST_DATA = {
+    "id": "11318092291909999",
+    "sensitive": False,
+    "spoiler_text": "",
+    "visibility": "public",
+    "language": "en",
+    "content": "<p>Surveillance tech is bad</p>",
+    "mentions": [],
+    "tags": [],
+    "media_attachments": [],
+}
+
 
 MODEL_EXPORT = {
     "feature_counts": {

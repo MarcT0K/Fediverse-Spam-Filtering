@@ -30,8 +30,8 @@ The API provides the following endpoints:
  - [POST] "/filter": predicts whether a status is a spam or not.
  - [GET] "/outliers": returns the list of outliers identified spam filtering (waiting for a manual decision).
  - [POST] "/outliers/classify": receives manual decisions for previously identified outliers.
- - [GET] "/random_check/": returns a list of randomly selected statuses requiring a manual check.
- - [POST] "/random_check/": receives manual decisions for randomly selected statuses.
+ - [GET] "/random_checks/": returns a list of randomly selected statuses requiring a manual check.
+ - [POST] "/random_checks/": receives manual decisions for randomly selected statuses.
  - [POST] "/training_data/import": update the spam filtering model based on imported data.
  - [GET] "/model/import"
  - [POST] "/model/export"

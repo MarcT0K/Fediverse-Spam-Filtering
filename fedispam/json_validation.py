@@ -29,7 +29,7 @@ def decisions_validation(list_of_decisions):
             assert len(tup) == 2
             obj_id, decision = tup
             assert isinstance(obj_id, str)
-            assert isinstance(decision, bool)
+            assert decision in [0, 1]
     except AssertionError:
         return False
 

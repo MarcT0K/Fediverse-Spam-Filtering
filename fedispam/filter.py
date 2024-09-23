@@ -153,23 +153,23 @@ class SpamFilter:
     nb_samples: Optional[List[int]] = None
     feature_counts: Optional[Dict[str, List[int]]] = None
 
-    def __init__(
-        self, lang="english", outliar_threshold=3, random_confirmation_rate=0.05
-    ):
+    def __init__(self, lang="english", outliar_threshold=3, random_check_rate=0.05):
         # Number of unknown words to classify as outliar
         self.outliar_threshold = outliar_threshold
         # Probability to keep a status for manual validation
-        self.random_confirmation_rate = random_confirmation_rate
+        self.random_check_rate = random_check_rate
 
         self.lang = lang
-        self.model_db = Database("model.db")
+
         self.outliar_db = Database("outliers.db")
-        self.random_check_db = Database("random_check.db")
+        self.random_checks_db = Database("random_checks.db")
+        self.model_db = Database("model.db")
 
     def start(self):
-        self.model_db.open()
+
         self.outliar_db.open()
-        self.random_check_db.open()
+        self.random_checks_db.open()
+        self.model_db.open()
 
         model_information = self.model_db.extract_db()
 
@@ -196,7 +196,7 @@ class SpamFilter:
     def stop(self):
         self.model_db.close()
         self.outliar_db.close()
-        self.random_check_db.close()
+        self.random_checks_db.close()
 
     @staticmethod
     def encode_int(nb: int) -> bytes:
@@ -325,13 +325,13 @@ class SpamFilter:
         outliers = await self.outliar_db.get_all_keys()
         return [outliar.decode() for outliar in outliers]
 
-    async def random_check_manual_confirmation(
+    async def random_checks_manual_confirmation(
         self, data: List[Tuple[str, int]]
     ) -> None:
         model_update = {"nb_samples": [0, 0], "feature_counts": {}}
         for status_id, decision in data:
-            enc = await self.random_check_db.get_val_and_del_key(status_id)
-            status_features = json.loads(enc)
+            enc = await self.random_checks_db.get_val_and_del_key(status_id)
+            _prev_decision, status_features = self.decode_preprocessed(enc.decode())
             model_update["nb_samples"][decision] += 1
             model_update["feature_counts"] = SpamFilter.__feature_dictionary_update(
                 model_update["feature_counts"], status_features, decision
@@ -339,10 +339,10 @@ class SpamFilter:
 
         await self._update_model(model_update)
 
-    async def get_all_random_checks(self) -> List[Tuple[str, int]]:
-        random_check_dict = await self.random_check_db.get_all_key_values()
+    async def get_all_random_checkss(self) -> List[Tuple[str, int]]:
+        random_checks_dict = await self.random_checks_db.get_all_key_values()
         res = []
-        for status_id, payload in random_check_dict.items():
+        for status_id, payload in random_checks_dict.items():
             decision, _ = self.decode_preprocessed(payload.decode())
             res.append((status_id.decode(), decision))
         return res
@@ -389,9 +389,9 @@ class SpamFilter:
             await self.outliar_db.set_key(status["id"], json.dumps(features))
         else:
             r = random.random()
-            if r < self.random_confirmation_rate:
+            if r < self.random_check_rate:
 
-                await self.random_check_db.set_key(
+                await self.random_checks_db.set_key(
                     status["id"], self.encode_preprocessed(pred, features)
                 )
 

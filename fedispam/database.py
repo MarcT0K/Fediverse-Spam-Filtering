@@ -1,5 +1,4 @@
 import dbm
-import pathlib
 
 from asyncio import Lock
 from typing import Dict, List, Union
@@ -74,4 +73,4 @@ class Database:
 
         async with self._lock:
             self._db.close()
-            self._db = dbm.open(self.db_filename, "n")
+            self._db = dbm.open(DB_DIR + self.db_filename, "n")

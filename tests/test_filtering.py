@@ -2,7 +2,7 @@ import pytest
 
 from fedispam.main import filtering_model
 
-from data import TRAINING_DATA, MODEL_EXPORT, OUTLIAR, FEATURE_COUNTS
+from data import TRAINING_DATA, MODEL_EXPORT, OUTLIAR, FEATURE_COUNTS, TEST_DATA
 
 # All test coroutines will be treated as marked.
 pytestmark = pytest.mark.asyncio
@@ -96,86 +96,6 @@ async def test_feature_extraction(test_client):
     }
 
 
-async def test_data_import(test_client):
-    resp = await test_client.post("/training_data/import")
-    assert resp.json() == {"success": False, "error": "Missing data"}
-    assert resp.status_code == 400
-
-    resp = await test_client.post("/training_data/import", json=["Invalid", "input"])
-    assert resp.json() == {"success": False, "error": "Invalid data format"}
-    assert resp.status_code == 400
-
-    resp = await test_client.post(
-        "/training_data/import", json=[[{"Invalid": "status"}, 0]]
-    )
-    assert resp.json() == {"success": False, "error": "Invalid data format"}
-    assert resp.status_code == 400
-
-    assert filtering_model.nb_samples == [0, 0]
-    assert filtering_model.log_posterior is not None
-    log_prob_before = filtering_model.log_posterior.copy()
-
-    resp = await test_client.post("/training_data/import", json=TRAINING_DATA)
-    assert resp.json() == {"success": True}
-    assert resp.status_code == 200
-
-    assert filtering_model.nb_samples == [2, 1]
-    assert log_prob_before != filtering_model.log_posterior
-
-
-async def test_model_export(test_client):
-    resp = await test_client.get("/model/export")
-    assert resp.status_code == 200
-    assert resp.json() == {
-        "feature_counts": {},
-        "nb_samples": [
-            0,
-            0,
-        ],
-    }
-
-    resp = await test_client.post("/training_data/import", json=TRAINING_DATA)
-    assert resp.json() == {"success": True}
-    assert resp.status_code == 200
-
-    assert filtering_model.nb_samples == [2, 1]
-
-    resp = await test_client.get("/model/export")
-    assert resp.status_code == 200
-    assert resp.json() == MODEL_EXPORT
-
-
-async def test_model_import(test_client):
-    assert filtering_model.nb_samples == [0, 0]
-    resp = await test_client.post(
-        "/model/import",
-        json={},
-    )
-    assert resp.status_code == 400
-    assert resp.json() == {"error": "Invalid model", "success": False}
-    assert filtering_model.nb_samples == [0, 0]
-
-    assert filtering_model.nb_samples == [0, 0]
-    resp = await test_client.post(
-        "/model/import",
-        json={
-            "feature_counts": {},
-            "nb_samples": [
-                0,
-                0,
-            ],
-        },
-    )
-    assert resp.status_code == 200
-    assert resp.json() == {"success": True}
-    assert filtering_model.nb_samples == [0, 0]
-
-    resp = await test_client.post("/model/import", json=MODEL_EXPORT)
-    assert resp.status_code == 200
-    assert resp.json() == {"success": True}
-    assert filtering_model.nb_samples == [2, 1]
-
-
 async def test_filter(test_client):
     resp = await test_client.post("/model/import", json=MODEL_EXPORT)
     assert resp.status_code == 200
@@ -214,7 +134,7 @@ async def test_outliar(test_client):
     log_prob_before = filtering_model.log_posterior.copy()
 
     resp = await test_client.post(
-        "/outliers/classify", json=[["113181206365051836", True]]
+        "/outliers/classify", json=[["113181206365051836", 1]]
     )
     assert resp.status_code == 200
     assert resp.json() == {"success": True}
@@ -230,3 +150,93 @@ async def test_outliar(test_client):
     resp = await test_client.post("/filter", json=OUTLIAR)
     assert resp.status_code == 200
     assert resp.json() == {"decision": 1, "id": "113181206365051836"}
+
+
+async def test_random_checks(test_client):
+    status_id = TEST_DATA["id"]
+
+    resp = await test_client.post("/model/import", json=MODEL_EXPORT)
+    assert resp.status_code == 200
+    assert resp.json() == {"success": True}
+    assert filtering_model.nb_samples == [2, 1]
+
+    resp = await test_client.get("/random_checks")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+    filtering_model.random_check_rate = 1  # 100% chance random check
+    resp = await test_client.post("/filter", json=TEST_DATA)
+    assert resp.status_code == 200
+    assert resp.json() == {"decision": 0, "id": status_id}
+
+    resp = await test_client.get("/random_checks")
+    assert resp.status_code == 200
+    assert resp.json() == [[status_id, 0]]
+
+    assert filtering_model.feature_counts == FEATURE_COUNTS
+    assert filtering_model.log_posterior is not None
+    log_prob_before = filtering_model.log_posterior.copy()
+
+    resp = await test_client.post("/random_checks/classify", json=[[status_id, 0]])
+    assert resp.status_code == 200
+    assert resp.json() == {"success": True}
+    assert filtering_model.nb_samples == [3, 1]
+
+    assert filtering_model.feature_counts != FEATURE_COUNTS
+    assert log_prob_before != filtering_model.log_posterior
+
+    resp = await test_client.get("/random_checks")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+    resp = await test_client.post("/filter", json=TEST_DATA)
+    assert resp.status_code == 200
+    assert resp.json() == {"decision": 0, "id": status_id}
+
+
+async def test_invalid_formats(test_client):
+    status = TRAINING_DATA[0][0].copy()
+    resp = await test_client.post("/filter", json={})
+    assert resp.status_code == 400
+    assert resp.json() == {"error": "Invalid data format"}
+
+    status["sensitive"] = "test"
+    resp = await test_client.post("/filter", json=status)
+    assert resp.status_code == 400
+    assert resp.json() == {"error": "Invalid data format"}
+
+    resp = await test_client.post(
+        "/random_checks/classify", json=[["123", 2]]
+    )  # Invalid decision
+    assert resp.status_code == 400
+    assert resp.json() == {"success": False, "error": "Invalid data format"}
+
+    resp = await test_client.post(
+        "/random_checks/classify", json=[[123, 1]]
+    )  # Invalid ID type
+    assert resp.status_code == 400
+    assert resp.json() == {"success": False, "error": "Invalid data format"}
+
+    resp = await test_client.post(
+        "/random_checks/classify", json=["123", 1]
+    )  # Must be a list of decisions
+    assert resp.status_code == 400
+    assert resp.json() == {"success": False, "error": "Invalid data format"}
+
+    resp = await test_client.post(
+        "/outliers/classify", json=[["123", 2]]
+    )  # Invalid decision
+    assert resp.status_code == 400
+    assert resp.json() == {"success": False, "error": "Invalid data format"}
+
+    resp = await test_client.post(
+        "/outliers/classify", json=[[123, 1]]
+    )  # Invalid ID type
+    assert resp.status_code == 400
+    assert resp.json() == {"success": False, "error": "Invalid data format"}
+
+    resp = await test_client.post(
+        "/outliers/classify", json=["123", 1]
+    )  # Must be a list of decisions
+    assert resp.status_code == 400
+    assert resp.json() == {"success": False, "error": "Invalid data format"}
